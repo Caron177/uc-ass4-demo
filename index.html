@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>Urban Sensing Demo</title>
@@ -82,48 +82,48 @@
 <body>
   <div class="card">
     <h1>Urban Sensing Demo</h1>
-    <div class="small">人体加速度 + 天气 实时分析</div>
+    <div class="small">Real-time acceleration + weather analysis</div>
 
     <div class="row">
-      <span class="label">当前加速度大小：</span>
+      <span class="label">Acceleration magnitude:</span>
       <span class="value" id="acc-mag">--</span>
     </div>
     <div class="row">
-      <span class="label">判断活动：</span>
+      <span class="label">Activity:</span>
       <span class="value" id="activity">--</span>
     </div>
     <div class="row">
-      <span class="label">当前天气：</span>
+      <span class="label">Weather:</span>
       <span class="value" id="weather">--</span>
     </div>
     <div class="row">
-      <span class="label">当前温度：</span>
+      <span class="label">Temperature:</span>
       <span class="value" id="temp">--</span>
     </div>
 
     <div class="recommend" id="recommend">
-      系统建议会显示在这里。
+      Recommendations will appear here.
     </div>
 
     <div class="buttons">
-      <button class="start-btn" id="start-btn">开始采集</button>
-      <button class="stop-btn" id="stop-btn">停止采集</button>
+      <button class="start-btn" id="start-btn">Start</button>
+      <button class="stop-btn" id="stop-btn">Stop</button>
     </div>
 
     <div class="status" id="status">
-      请点击“开始采集”并允许访问运动传感器。
+      Click "Start" and allow motion sensor access.
     </div>
   </div>
 
   <script>
-    // ======= 这里是你自己的配置 =======
-    const THINGSPEAK_WRITE_KEY = "YPU2K0E56HO6P5N2";   // 你的 Write API Key
-    const CHANNEL_ID = 3172051;                        // 你的 Channel ID
-    const OPENWEATHER_KEY = "94eb588080afeb13f7fcae2136db4b45";  // 你的天气 key
-    const CITY = "Dublin,IE"; // 你可以换成你所在城市，比如 "Beijing"
-    const SEND_INTERVAL_MS = 20000; // 每 20 秒向 Thingspeak 发送一次
+    // ======= CONFIGURATION =======
+    const THINGSPEAK_WRITE_KEY = "YPU2K0E56HO6P5N2";
+    const CHANNEL_ID = 3172051;
+    const OPENWEATHER_KEY = "94eb588080afeb13f7fcae2136db4b45";
+    const CITY = "Dublin,IE";
+    const SEND_INTERVAL_MS = 20000;
 
-    // ======= 页面元素 =======
+    // ======= PAGE ELEMENTS =======
     const accMagEl = document.getElementById("acc-mag");
     const activityEl = document.getElementById("activity");
     const weatherEl = document.getElementById("weather");
@@ -135,53 +135,53 @@
 
     let collecting = false;
     let lastSendTime = 0;
-    let latestWeather = null; // {temp, main}
+    let latestWeather = null;
 
-    // ======= 算法部分：活动分类 =======
+    // ======= ACTIVITY CLASSIFICATION =======
     function classifyActivity(mag) {
       if (mag < 2) {
-        return "静止 🧍";
+        return "Stationary 🧍";
       } else if (mag < 6) {
-        return "走路 🚶";
+        return "Walking 🚶";
       } else {
-        return "跑步 🏃";
+        return "Running 🏃";
       }
     }
 
-    // ======= 算法部分：给出建议 =======
+    // ======= RECOMMENDATION LOGIC =======
     function makeRecommendation(activity, temp, weatherMain) {
       if (temp == null || weatherMain == null) {
-        return "正在采集数据...";
+        return "Collecting data...";
       }
 
       const isBadWeather = ["Rain", "Snow", "Thunderstorm"].includes(weatherMain);
       const tooCold = temp < 0;
       const tooHot = temp > 30;
 
-      if (activity.includes("跑步")) {
+      if (activity.includes("Running")) {
         if (isBadWeather) {
-          return "正在跑步，但当前天气不佳（" + weatherMain + "），不建议户外跑步，可以改为室内运动。";
+          return `You are running, but the current weather (${weatherMain}) is not ideal. Indoor exercise is recommended.`;
         } else if (tooCold || tooHot) {
-          return "正在跑步，气温 " + temp.toFixed(1) + "℃，不太适合长时间高强度户外运动，请注意身体。";
+          return `You are running. Temperature is ${temp.toFixed(1)}°C. Not ideal for high-intensity outdoor activity.`;
         } else {
-          return "正在跑步，天气和温度都还不错，适合适度户外运动。";
+          return "You are running. Weather and temperature are suitable for outdoor exercise.";
         }
-      } else if (activity.includes("走路")) {
+      } else if (activity.includes("Walking")) {
         if (isBadWeather) {
-          return "正在走路，外面天气（" + weatherMain + "），如果不是必须外出，建议缩短在户外停留时间。";
+          return `You are walking, but the weather (${weatherMain}) is not great. Try to reduce outdoor exposure if possible.`;
         } else {
-          return "正在走路，天气基本可以，适合作为日常活动。";
+          return "You are walking. Weather is acceptable for normal activity.";
         }
       } else {
         if (isBadWeather && tooCold) {
-          return "当前基本静止，外面又冷又天气不好，其实待在室内是不错的选择。";
+          return "You are stationary. Weather is cold and unpleasant; staying indoors is a good choice.";
         } else {
-          return "当前比较静止，如果想增加运动量，可以适度走动一下（注意根据天气和温度安排）。";
+          return "You are stationary. If you want more exercise, consider walking a bit depending on the weather.";
         }
       }
     }
 
-    // ======= 获取天气 =======
+    // ======= FETCH WEATHER =======
     async function fetchWeather() {
       try {
         const url = `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${OPENWEATHER_KEY}&units=metric`;
@@ -191,15 +191,15 @@
         const main = data.weather[0].main;
         latestWeather = { temp, main };
         weatherEl.textContent = main;
-        tempEl.textContent = temp.toFixed(1) + " ℃";
+        tempEl.textContent = temp.toFixed(1) + " °C";
       } catch (e) {
         console.error(e);
-        statusEl.textContent = "获取天气失败，请检查网络。";
+        statusEl.textContent = "Failed to fetch weather.";
         statusEl.classList.add("error");
       }
     }
 
-    // ======= 发送数据到 Thingspeak =======
+    // ======= SEND DATA TO THINGSPEAK =======
     async function sendToThingspeak(ax, ay, az, temp, weatherMain) {
       try {
         const params = new URLSearchParams({
@@ -215,11 +215,11 @@
         const text = await res.text();
         console.log("ThingSpeak response:", text);
       } catch (e) {
-        console.error("发送到 ThingSpeak 失败:", e);
+        console.error("Failed to send to ThingSpeak:", e);
       }
     }
 
-    // ======= 处理加速度事件 =======
+    // ======= HANDLE MOTION EVENT =======
     function handleMotion(event) {
       if (!collecting) return;
 
@@ -235,8 +235,8 @@
 
       const temp = latestWeather ? latestWeather.temp : null;
       const weatherMain = latestWeather ? latestWeather.main : null;
-      const rec = makeRecommendation(activity, temp, weatherMain);
-      recommendEl.textContent = rec;
+
+      recommendEl.textContent = makeRecommendation(activity, temp, weatherMain);
 
       const now = Date.now();
       if (now - lastSendTime > SEND_INTERVAL_MS) {
@@ -253,21 +253,22 @@
       }
     }
 
-    // ======= 开始和停止按钮逻辑 =======
+    // ======= START & STOP COLLECTION =======
     async function startCollect() {
       if (collecting) return;
 
+      // iOS permission request
       if (typeof DeviceMotionEvent !== "undefined" &&
           typeof DeviceMotionEvent.requestPermission === "function") {
         try {
           const response = await DeviceMotionEvent.requestPermission();
           if (response !== "granted") {
-            statusEl.textContent = "你拒绝了运动传感器权限，无法采集数据。";
+            statusEl.textContent = "Motion sensor permission denied.";
             statusEl.classList.add("error");
             return;
           }
         } catch (e) {
-          statusEl.textContent = "请求传感器权限时出错。";
+          statusEl.textContent = "Error requesting motion permission.";
           statusEl.classList.add("error");
           return;
         }
@@ -275,7 +276,7 @@
 
       window.addEventListener("devicemotion", handleMotion);
       collecting = true;
-      statusEl.textContent = "正在采集数据，请轻轻走动或晃动手机。";
+      statusEl.textContent = "Collecting data... Move your phone gently.";
       statusEl.classList.remove("error");
 
       fetchWeather();
@@ -284,7 +285,7 @@
     function stopCollect() {
       collecting = false;
       window.removeEventListener("devicemotion", handleMotion);
-      statusEl.textContent = "已停止采集。";
+      statusEl.textContent = "Collection stopped.";
     }
 
     startBtn.addEventListener("click", startCollect);
