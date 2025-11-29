@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Urban Sensing Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      padding: 16px;
+    }
+    .card {
+      max-width: 480px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      padding: 16px 20px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .small {
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .row {
+      margin: 8px 0;
+      font-size: 14px;
+    }
+    .label {
+      font-weight: bold;
+    }
+    .value {
+      margin-left: 4px;
+    }
+    .recommend {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #f0f7ff;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .buttons {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 20px;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .start-btn {
+      background: #2e7d32;
+      color: white;
+    }
+    .stop-btn {
+      background: #b71c1c;
+      color: white;
+    }
+    .status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #999;
+      text-align: center;
+    }
+    .error {
+      color: #c62828;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Urban Sensing Demo</h1>
+    <div class="small">人体加速度 + 天气 实时分析</div>
+
+    <div class="row">
+      <span class="label">当前加速度大小：</span>
+      <span class="value" id="acc-mag">--</span>
+    </div>
+    <div class="row">
+      <span class="label">判断活动：</span>
+      <span class="value" id="activity">--</span>
+    </div>
+    <div class="row">
+      <span class="label">当前天气：</span>
+      <span class="value" id="weather">--</span>
+    </div>
+    <div class="row">
+      <span class="label">当前温度：</span>
+      <span class="value" id="temp">--</span>
+    </div>
+
+    <div class="recommend" id="recommend">
+      系统建议会显示在这里。
+    </div>
+
+    <div class="buttons">
+      <button class="start-btn" id="start-btn">开始采集</button>
+      <button class="stop-btn" id="stop-btn">停止采集</button>
+    </div>
+
+    <div class="status" id="status">
+      请点击“开始采集”并允许访问运动传感器。
+    </div>
+  </div>
+
+  <script>
+    // ======= 这里是你自己的配置 =======
+    const THINGSPEAK_WRITE_KEY = "YPU2K0E56HO6P5N2";   // 你的 Write API Key
+    const CHANNEL_ID = 3172051;                        // 你的 Channel ID
+    const OPENWEATHER_KEY = "94eb588080afeb13f7fcae2136db4b45";  // 你的天气 key
+    const CITY = "Dublin,IE"; // 你可以换成你所在城市，比如 "Beijing"
+    const SEND_INTERVAL_MS = 20000; // 每 20 秒向 Thingspeak 发送一次
+
+    // ======= 页面元素 =======
+    const accMagEl = document.getElementById("acc-mag");
+    const activityEl = document.getElementById("activity");
+    const weatherEl = document.getElementById("weather");
+    const tempEl = document.getElementById("temp");
+    const recommendEl = document.getElementById("recommend");
+    const statusEl = document.getElementById("status");
+    const startBtn = document.getElementById("start-btn");
+    const stopBtn = document.getElementById("stop-btn");
+
+    let collecting = false;
+    let lastSendTime = 0;
+    let latestWeather = null; // {temp, main}
+
+    // ======= 算法部分：活动分类 =======
+    function classifyActivity(mag) {
+      if (mag < 2) {
+        return "静止 🧍";
+      } else if (mag < 6) {
+        return "走路 🚶";
+      } else {
+        return "跑步 🏃";
+      }
+    }
+
+    // ======= 算法部分：给出建议 =======
+    function makeRecommendation(activity, temp, weatherMain) {
+      if (temp == null || weatherMain == null) {
+        return "正在采集数据...";
+      }
+
+      const isBadWeather = ["Rain", "Snow", "Thunderstorm"].includes(weatherMain);
+      const tooCold = temp < 0;
+      const tooHot = temp > 30;
+
+      if (activity.includes("跑步")) {
+        if (isBadWeather) {
+          return "正在跑步，但当前天气不佳（" + weatherMain + "），不建议户外跑步，可以改为室内运动。";
+        } else if (tooCold || tooHot) {
+          return "正在跑步，气温 " + temp.toFixed(1) + "℃，不太适合长时间高强度户外运动，请注意身体。";
+        } else {
+          return "正在跑步，天气和温度都还不错，适合适度户外运动。";
+        }
+      } else if (activity.includes("走路")) {
+        if (isBadWeather) {
+          return "正在走路，外面天气（" + weatherMain + "），如果不是必须外出，建议缩短在户外停留时间。";
+        } else {
+          return "正在走路，天气基本可以，适合作为日常活动。";
+        }
+      } else {
+        if (isBadWeather && tooCold) {
+          return "当前基本静止，外面又冷又天气不好，其实待在室内是不错的选择。";
+        } else {
+          return "当前比较静止，如果想增加运动量，可以适度走动一下（注意根据天气和温度安排）。";
+        }
+      }
+    }
+
+    // ======= 获取天气 =======
+    async function fetchWeather() {
+      try {
+        const url = `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${OPENWEATHER_KEY}&units=metric`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const temp = data.main.temp;
+        const main = data.weather[0].main;
+        latestWeather = { temp, main };
+        weatherEl.textContent = main;
+        tempEl.textContent = temp.toFixed(1) + " ℃";
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "获取天气失败，请检查网络。";
+        statusEl.classList.add("error");
+      }
+    }
+
+    // ======= 发送数据到 Thingspeak =======
+    async function sendToThingspeak(ax, ay, az, temp, weatherMain) {
+      try {
+        const params = new URLSearchParams({
+          api_key: THINGSPEAK_WRITE_KEY,
+          field1: ax.toFixed(3),
+          field2: ay.toFixed(3),
+          field3: az.toFixed(3),
+          field4: temp != null ? temp.toFixed(2) : "",
+          field5: weatherMain || ""
+        });
+        const url = "https://api.thingspeak.com/update?" + params.toString();
+        const res = await fetch(url);
+        const text = await res.text();
+        console.log("ThingSpeak response:", text);
+      } catch (e) {
+        console.error("发送到 ThingSpeak 失败:", e);
+      }
+    }
+
+    // ======= 处理加速度事件 =======
+    function handleMotion(event) {
+      if (!collecting) return;
+
+      const ax = event.accelerationIncludingGravity.x || 0;
+      const ay = event.accelerationIncludingGravity.y || 0;
+      const az = event.accelerationIncludingGravity.z || 0;
+
+      const mag = Math.sqrt(ax*ax + ay*ay + az*az);
+
+      accMagEl.textContent = mag.toFixed(2);
+      const activity = classifyActivity(mag);
+      activityEl.textContent = activity;
+
+      const temp = latestWeather ? latestWeather.temp : null;
+      const weatherMain = latestWeather ? latestWeather.main : null;
+      const rec = makeRecommendation(activity, temp, weatherMain);
+      recommendEl.textContent = rec;
+
+      const now = Date.now();
+      if (now - lastSendTime > SEND_INTERVAL_MS) {
+        lastSendTime = now;
+        if (!latestWeather) {
+          fetchWeather().then(() => {
+            const t = latestWeather ? latestWeather.temp : null;
+            const w = latestWeather ? latestWeather.main : null;
+            sendToThingspeak(ax, ay, az, t, w);
+          });
+        } else {
+          sendToThingspeak(ax, ay, az, temp, weatherMain);
+        }
+      }
+    }
+
+    // ======= 开始和停止按钮逻辑 =======
+    async function startCollect() {
+      if (collecting) return;
+
+      if (typeof DeviceMotionEvent !== "undefined" &&
+          typeof DeviceMotionEvent.requestPermission === "function") {
+        try {
+          const response = await DeviceMotionEvent.requestPermission();
+          if (response !== "granted") {
+            statusEl.textContent = "你拒绝了运动传感器权限，无法采集数据。";
+            statusEl.classList.add("error");
+            return;
+          }
+        } catch (e) {
+          statusEl.textContent = "请求传感器权限时出错。";
+          statusEl.classList.add("error");
+          return;
+        }
+      }
+
+      window.addEventListener("devicemotion", handleMotion);
+      collecting = true;
+      statusEl.textContent = "正在采集数据，请轻轻走动或晃动手机。";
+      statusEl.classList.remove("error");
+
+      fetchWeather();
+    }
+
+    function stopCollect() {
+      collecting = false;
+      window.removeEventListener("devicemotion", handleMotion);
+      statusEl.textContent = "已停止采集。";
+    }
+
+    startBtn.addEventListener("click", startCollect);
+    stopBtn.addEventListener("click", stopCollect);
+  </script>
+</body>
+</html>
