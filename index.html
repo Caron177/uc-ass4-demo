@@ -82,7 +82,7 @@
 <body>
   <div class="card">
     <h1>Urban Sensing Demo</h1>
-    <div class="small">Real-time acceleration + weather analysis</div>
+    <div class="small">Real-time acceleration + weather analysis + outdoor index</div>
 
     <div class="row">
       <span class="label">Acceleration magnitude:</span>
@@ -99,6 +99,15 @@
     <div class="row">
       <span class="label">Temperature:</span>
       <span class="value" id="temp">--</span>
+    </div>
+
+    <!-- EXTRA TASK: Outdoor Suitability Index UI -->
+    <div class="row">
+      <span class="label">Outdoor index:</span>
+      <span class="value" id="outdoor-index">--</span>
+    </div>
+    <div class="row" id="outdoor-status" style="font-size:12px; color:#666;">
+      --
     </div>
 
     <div class="recommend" id="recommend">
@@ -132,6 +141,8 @@
     const statusEl = document.getElementById("status");
     const startBtn = document.getElementById("start-btn");
     const stopBtn = document.getElementById("stop-btn");
+    const outdoorIndexEl = document.getElementById("outdoor-index");
+    const outdoorStatusEl = document.getElementById("outdoor-status");
 
     let collecting = false;
     let lastSendTime = 0;
@@ -140,12 +151,47 @@
     // ======= ACTIVITY CLASSIFICATION =======
     function classifyActivity(mag) {
       if (mag < 2) {
-        return "Stationary ";
+        return "Stationary 🧍";
       } else if (mag < 6) {
-        return "Walking ";
+        return "Walking 🚶";
       } else {
-        return "Running ";
+        return "Running 🏃";
       }
+    }
+
+    // ======= EXTRA TASK: OUTDOOR INDEX ALGORITHM =======
+    function computeOutdoorIndex(activity, temp, weatherMain) {
+      if (temp == null || weatherMain == null) return null;
+
+      let score = 50; // base score
+
+      // Activity factor
+      if (activity.includes("Running")) score += 20;
+      else if (activity.includes("Walking")) score += 10;
+
+      // Weather factor
+      const bad = ["Rain", "Snow", "Thunderstorm"];
+      const ok = ["Clouds", "Drizzle"];
+      if (bad.includes(weatherMain)) score -= 30;
+      else if (ok.includes(weatherMain)) score -= 10;
+
+      // Temperature factor
+      if (temp < 0 || temp > 30) {
+        score -= 30;
+      } else if ((temp >= 0 && temp < 5) || (temp > 25 && temp <= 30)) {
+        score -= 10;
+      }
+
+      // Clamp 0–100
+      score = Math.max(0, Math.min(100, score));
+      return score;
+    }
+
+    function describeOutdoorIndex(score) {
+      if (score == null) return "Not enough data to evaluate conditions.";
+      if (score >= 70) return "Good conditions for outdoor activity.";
+      if (score >= 40) return "Acceptable, but be cautious.";
+      return "Poor conditions. Limit outdoor activity if possible.";
     }
 
     // ======= RECOMMENDATION LOGIC =======
@@ -199,8 +245,8 @@
       }
     }
 
-    // ======= SEND DATA TO THINGSPEAK =======
-    async function sendToThingspeak(ax, ay, az, temp, weatherMain) {
+    // ======= SEND DATA TO THINGSPEAK (INCLUDING OUTDOOR INDEX) =======
+    async function sendToThingspeak(ax, ay, az, temp, weatherMain, index) {
       try {
         const params = new URLSearchParams({
           api_key: THINGSPEAK_WRITE_KEY,
@@ -208,7 +254,8 @@
           field2: ay.toFixed(3),
           field3: az.toFixed(3),
           field4: temp != null ? temp.toFixed(2) : "",
-          field5: weatherMain || ""
+          field5: weatherMain || "",
+          field6: index != null ? index.toFixed(0) : ""
         });
         const url = "https://api.thingspeak.com/update?" + params.toString();
         const res = await fetch(url);
@@ -236,6 +283,22 @@
       const temp = latestWeather ? latestWeather.temp : null;
       const weatherMain = latestWeather ? latestWeather.main : null;
 
+      // Extra task: compute and display outdoor index
+      const index = computeOutdoorIndex(activity, temp, weatherMain);
+      if (index == null) {
+        outdoorIndexEl.textContent = "--";
+        outdoorStatusEl.textContent = "Waiting for data...";
+        outdoorStatusEl.style.color = "#666";
+      } else {
+        outdoorIndexEl.textContent = index.toFixed(0) + " / 100";
+        outdoorStatusEl.textContent = describeOutdoorIndex(index);
+        if (index < 40) {
+          outdoorStatusEl.style.color = "#b71c1c"; // warning
+        } else {
+          outdoorStatusEl.style.color = "#666";
+        }
+      }
+
       recommendEl.textContent = makeRecommendation(activity, temp, weatherMain);
 
       const now = Date.now();
@@ -245,10 +308,11 @@
           fetchWeather().then(() => {
             const t = latestWeather ? latestWeather.temp : null;
             const w = latestWeather ? latestWeather.main : null;
-            sendToThingspeak(ax, ay, az, t, w);
+            const idx = computeOutdoorIndex(activity, t, w);
+            sendToThingspeak(ax, ay, az, t, w, idx);
           });
         } else {
-          sendToThingspeak(ax, ay, az, temp, weatherMain);
+          sendToThingspeak(ax, ay, az, temp, weatherMain, index);
         }
       }
     }
@@ -293,4 +357,3 @@
   </script>
 </body>
 </html>
-
